@@ -144,6 +144,8 @@ class MidApiClient:
             "access_token": self._access_token,
             "refresh_token": self._refresh_token,
             "id_token": self._id_token,
+            "device_key": self._device_key,
+            "internal_username": self._internal_username,
         }
 
     @staticmethod
@@ -151,13 +153,20 @@ class MidApiClient:
         access = data.get("access_token")
         refresh = data.get("refresh_token")
         id_tok = data.get("id_token")
-        return access, refresh, id_tok
+        device_key = data.get("device_key", "")
+        internal_user = data.get("internal_username", "")
+        return access, refresh, id_tok, device_key, internal_user
 
     def load_tokens(self, token_data: dict) -> None:
-        access, refresh, id_tok = self._deserialize_tokens(token_data)
+        access, refresh, id_tok, device_key, internal_user = \
+            self._deserialize_tokens(token_data)
         self._access_token = access
         self._refresh_token = refresh
         self._id_token = id_tok
+        if device_key:
+            self._device_key = device_key
+        if internal_user:
+            self._internal_username = internal_user
 
     async def authenticate(self) -> dict:
         _LOGGER.info("Authenticating with MID...")
