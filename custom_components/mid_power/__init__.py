@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .api import MidApiClient, MidApiError, MidUsageData
+from .api import MidApiClient, MidUsageData
 from .const import (
     DOMAIN,
     CONF_EMAIL,
@@ -85,22 +85,4 @@ class MidUsageCoordinator(DataUpdateCoordinator[MidUsageData]):
         )
 
     async def _async_update_data(self) -> MidUsageData:
-        try:
-            data = await self._client.fetch_all_usage()
-        except MidApiError as exc:
-            _LOGGER.error("MID data fetch failed: %s", exc)
-            self._maybe_update_tokens()
-            raise UpdateFailed(str(exc)) from exc
-
-        self._maybe_update_tokens()
-        return data
-
-    def _maybe_update_tokens(self) -> None:
-        new_token_data = self._client._serialize_tokens()
-        current_token_data = self._entry.data.get("token_data", {})
-        if new_token_data != current_token_data:
-            new_data = dict(self._entry.data)
-            new_data["token_data"] = new_token_data
-            self.hass.config_entries.async_update_entry(
-                self._entry, data=new_data
-            )
+        return await self._client.fetch_all_usage()

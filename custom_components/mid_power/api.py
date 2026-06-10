@@ -265,14 +265,6 @@ class MidApiClient:
         return None
 
     async def _ensure_auth(self) -> None:
-        # Never try refresh with a locally-generated device_key
-        if self._device_key and self._internal_username:
-            new_tokens = await self._refresh_access_token()
-            if new_tokens:
-                return
-            _LOGGER.warning("Refresh failed, re-authenticating...")
-        else:
-            _LOGGER.warning("No device_key stored, re-authenticating...")
         await self.authenticate()
 
     async def discover_account(self) -> AccountInfo:
@@ -359,13 +351,28 @@ class MidApiClient:
                 "%Y-%m-%d")
         if not end_date:
             end_date = datetime.now().strftime("%Y-%m-%d")
-        monthly = await self._fetch_monthly_usage(start_date, end_date)
-        daily = await self._fetch_daily_usage()
+
+        monthly_data = MidUsageData()
+        daily_data = MidUsageData()
+
+        try:
+            monthly_data = await self._fetch_monthly_usage(
+                start_date, end_date)
+        except MidApiError as exc:
+            _LOGGER.error("Monthly usage fetch failed: %s", exc)
+            raise
+
+        try:
+            daily_data = await self._fetch_daily_usage()
+        except MidApiError as exc:
+            _LOGGER.error("Daily usage fetch failed: %s", exc)
+            raise
+
         return MidUsageData(
-            monthly_periods=monthly.usage_periods,
-            daily_periods=daily.usage_periods,
-            overlay_periods=monthly.overlay_periods,
-            channels=monthly.channels,
+            monthly_periods=monthly_data.usage_periods,
+            daily_periods=daily_data.usage_periods,
+            overlay_periods=monthly_data.overlay_periods,
+            channels=monthly_data.channels,
         )
 
     async def _fetch_monthly_usage(self, start_date: str,
