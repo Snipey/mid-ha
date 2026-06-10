@@ -366,8 +366,8 @@ class MidApiClient:
             raise
 
         return MidUsageData(
-            monthly_periods=monthly_data.usage_periods,
-            daily_periods=daily_data.usage_periods,
+            monthly_periods=monthly_data.monthly_periods,
+            daily_periods=daily_data.monthly_periods,
             overlay_periods=monthly_data.overlay_periods,
             channels=monthly_data.channels,
         )
