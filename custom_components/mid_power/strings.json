@@ -3,18 +3,17 @@
     "step": {
       "user": {
         "data": {
-          "username": "Username",
           "email": "Email",
           "password": "Password"
         },
-        "description": "Enter your MID MyAccount credentials. Your account will be discovered automatically.",
+        "description": "Enter your MID MyAccount email and password. Your account will be discovered automatically.",
         "title": "Modesto Irrigation District"
       }
     },
     "error": {
-      "auth": "Authentication failed. Check your username and password.",
+      "auth": "Authentication failed. Check your email and password.",
       "account": "Account discovery failed. Check logs for details.",
-      "unknown": "An unknown error occurred."
+      "unknown": "An unexpected error occurred."
     },
     "abort": {
       "already_configured": "This account is already configured."

@@ -14,9 +14,9 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from .api import MidApiClient, MidApiError, MidUsageData
 from .const import (
     DOMAIN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
     CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     CONF_ACCOUNT_ID,
     CONF_US_ID,
     POLL_INTERVAL_MINUTES,
@@ -32,9 +32,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     client = MidApiClient(
         session,
-        entry.data[CONF_USERNAME],
+        entry.data[CONF_EMAIL],
         entry.data[CONF_PASSWORD],
-        entry.data.get(CONF_EMAIL, ""),
     )
 
     token_data = entry.data.get("token_data", {})
@@ -42,8 +41,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     account_id = entry.data.get(CONF_ACCOUNT_ID, "")
     us_id = entry.data.get(CONF_US_ID, "")
+    internal_user = entry.data.get(CONF_USERNAME, "")
     if account_id and us_id:
-        client.restore_ids(account_id, us_id)
+        client.restore_ids(account_id, us_id, internal_user)
 
     coordinator = MidUsageCoordinator(hass, client, entry)
 

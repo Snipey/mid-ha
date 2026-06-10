@@ -100,16 +100,16 @@ class MidAccountError(MidApiError):
 
 class MidApiClient:
 
-    def __init__(self, session: ClientSession, username: str,
-                 password: str, email: str = ""):
+    def __init__(self, session: ClientSession, email: str,
+                 password: str):
         self._session = session
-        self._username = username
-        self._password = password
         self._email = email
+        self._password = password
+        self._internal_username: str = ""
         self._account_id: str = ""
         self._us_id: str = ""
 
-        stored = hashlib.sha256(username.encode()).hexdigest()
+        stored = hashlib.sha256(email.encode()).hexdigest()
         self._device_key = "us-east-2_" + str(uuid.UUID(
             stored[0:8] + "-" + stored[8:12] + "-" +
             stored[12:16] + "-" + stored[16:20] + "-" +
@@ -128,9 +128,16 @@ class MidApiClient:
     def account_id(self) -> str:
         return self._account_id
 
-    def restore_ids(self, account_id: str, us_id: str) -> None:
+    @property
+    def internal_username(self) -> str:
+        return self._internal_username
+
+    def restore_ids(self, account_id: str, us_id: str,
+                    internal_username: str = "") -> None:
         self._account_id = account_id
         self._us_id = us_id
+        if internal_username:
+            self._internal_username = internal_username
 
     def _serialize_tokens(self) -> dict:
         return {
@@ -155,9 +162,7 @@ class MidApiClient:
     async def authenticate(self) -> dict:
         _LOGGER.debug("Authenticating with MID...")
         payload: dict = {
-            "username": self._username, "password": self._password}
-        if self._email:
-            payload["email"] = self._email
+            "username": self._email, "password": self._password}
         try:
             async with self._session.post(
                 AUTH_URL, json=payload, raise_for_status=False
@@ -178,6 +183,8 @@ class MidApiClient:
         access = inner.get("accessToken", "")
         refresh = inner.get("refreshToken", "")
         id_tok = inner.get("idToken", "")
+        self._internal_username = inner.get("username", "")
+        self._device_key = inner.get("device_key", self._device_key)
 
         if not access:
             raise MidAuthError("No access token in auth response")
@@ -185,14 +192,13 @@ class MidApiClient:
         self._access_token = access
         self._refresh_token = refresh
         self._id_token = id_tok
-        self._device_key = inner.get("device_key", self._device_key)
         return self._serialize_tokens()
 
     async def _refresh_access_token(self) -> dict | None:
         if not self._access_token:
             return None
 
-        encoded_user = _encode_username(self._username)
+        encoded_user = _encode_username(self._internal_username)
         payload = {
             "token": self._access_token,
             "username": encoded_user,
@@ -235,7 +241,7 @@ class MidApiClient:
         await self._ensure_auth()
 
         search_data = await self._post_json(USERNAME_SEARCH_URL, {
-            "username": self._username,
+            "username": self._internal_username,
         })
         _LOGGER.debug("Usernamesearch: %s",
                        json_mod.dumps(search_data, default=str)[:1000])

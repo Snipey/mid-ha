@@ -3,18 +3,17 @@
     "step": {
       "user": {
         "title": "Modesto Irrigation District",
-        "description": "Enter your MID MyAccount credentials.\n\nThe integration will automatically discover your account and usage service.",
+        "description": "Enter your MID MyAccount email and password. Your account will be discovered automatically.",
         "data": {
-          "username": "Username",
           "email": "Email",
           "password": "Password"
         }
       }
     },
     "error": {
-      "auth": "Authentication failed. Check your username and password.",
-      "account": "Account discovery failed. The API response may have changed — check logs for details.",
-      "unknown": "An unknown error occurred."
+      "auth": "Authentication failed. Check your email and password.",
+      "account": "Account discovery failed. Check logs for details.",
+      "unknown": "An unexpected error occurred."
     },
     "abort": {
       "already_configured": "This account is already configured."

@@ -2,9 +2,9 @@
 
 DOMAIN = "mid_power"
 
-CONF_USERNAME = "username"
-CONF_PASSWORD = "password"
 CONF_EMAIL = "email"
+CONF_PASSWORD = "password"
+CONF_USERNAME = "_username"
 CONF_US_ID = "us_id"
 CONF_ACCOUNT_ID = "account_id"
 CONF_PREMISE_INFO = "premise_info"

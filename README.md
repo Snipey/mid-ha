@@ -48,24 +48,14 @@ After installation and restart:
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
 2. Search for "Modesto Irrigation District"
-3. Enter your credentials:
+3. Enter your MID MyAccount email and password
 
-| Field | How to find it |
-|-------|----------------|
-| **Username** | Log into [myaccount.mid.org](https://myaccount.mid.org), open DevTools (F12) → Network tab, look for a request to `/cognito/auth`, find `username` in the request payload |
-| **Email** | The email address you use to log into MyAccount |
+The integration automatically authenticates, discovers your account, and sets up usage sensors — no manual ID hunting required.
+
+| Field | Description |
+|-------|-------------|
+| **Email** | The email address you use to log into [myaccount.mid.org](https://myaccount.mid.org) |
 | **Password** | Your MID MyAccount password |
-
-The integration will automatically discover your account, usage service, and premise info — no need to hunt through DevTools for IDs.
-
-### Finding your username
-
-1. Log into [myaccount.mid.org](https://myaccount.mid.org)
-2. Press **F12** to open browser DevTools
-3. Go to the **Network** tab
-4. Find the request to **cognito/auth**
-5. Click it, then go to the **Payload** tab
-6. Copy the `username` value (a random-looking string like `DX7RN2vLgqDq459nTsey0b2PT26e8rt3`)
 
 ## Dashboard Example
 
@@ -96,8 +86,7 @@ line_width: 2
 ## Troubleshooting
 
 **"Authentication failed" during setup**
-- Verify your username and password are correct
-- The internal username is case-sensitive and may look like a random string (e.g. `DX7RN2vLgqDq459nTsey0b2PT26e8rt3`)
+- Verify your email and password are correct
 - Make sure your MID account is active at [myaccount.mid.org](https://myaccount.mid.org)
 
 **"Account discovery failed" during setup**

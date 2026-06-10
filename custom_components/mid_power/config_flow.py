@@ -12,9 +12,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from .api import MidApiClient, MidAuthError, MidAccountError, MidApiError
 from .const import (
     DOMAIN,
-    CONF_USERNAME,
-    CONF_PASSWORD,
     CONF_EMAIL,
+    CONF_PASSWORD,
+    CONF_USERNAME,
     CONF_ACCOUNT_ID,
     CONF_US_ID,
     CONF_PREMISE_INFO,
@@ -24,7 +24,6 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 AUTH_DATA_SCHEMA = vol.Schema({
-    vol.Required(CONF_USERNAME): str,
     vol.Required(CONF_EMAIL): str,
     vol.Required(CONF_PASSWORD): str,
 })
@@ -42,9 +41,8 @@ class MidPowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             session = async_get_clientsession(self.hass)
             client = MidApiClient(
                 session,
-                user_input[CONF_USERNAME],
-                user_input[CONF_PASSWORD],
                 user_input[CONF_EMAIL],
+                user_input[CONF_PASSWORD],
             )
 
             try:
@@ -72,9 +70,9 @@ class MidPowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(
                     title=title,
                     data={
-                        CONF_USERNAME: user_input[CONF_USERNAME],
-                        CONF_PASSWORD: user_input[CONF_PASSWORD],
                         CONF_EMAIL: user_input[CONF_EMAIL],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_USERNAME: client.internal_username,
                         CONF_ACCOUNT_ID: account_info.account_id,
                         CONF_US_ID: account_info.us_id,
                         CONF_PREMISE_INFO: account_info.premise_info,
