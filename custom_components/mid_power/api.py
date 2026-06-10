@@ -110,17 +110,15 @@ class MidApiClient:
         self._us_id: str = ""
 
         stored = hashlib.sha256(username.encode()).hexdigest()
-        device_uuid = str(uuid.UUID(
+        self._device_key = "us-east-2_" + str(uuid.UUID(
             stored[0:8] + "-" + stored[8:12] + "-" +
             stored[12:16] + "-" + stored[16:20] + "-" +
             stored[20:32]
         ))
-        self._device_key = f"us-east-2_{device_uuid}"
 
         self._access_token: str | None = None
         self._refresh_token: str | None = None
         self._id_token: str | None = None
-        self._token_expires: datetime | None = None
 
     @property
     def us_id(self) -> str:
@@ -139,8 +137,6 @@ class MidApiClient:
             "access_token": self._access_token,
             "refresh_token": self._refresh_token,
             "id_token": self._id_token,
-            "token_expires": self._token_expires.isoformat()
-            if self._token_expires else None,
         }
 
     @staticmethod
@@ -148,21 +144,18 @@ class MidApiClient:
         access = data.get("access_token")
         refresh = data.get("refresh_token")
         id_tok = data.get("id_token")
-        expires_str = data.get("token_expires")
-        expires = (datetime.fromisoformat(expires_str)
-                   if expires_str else None)
-        return access, refresh, id_tok, expires
+        return access, refresh, id_tok
 
     def load_tokens(self, token_data: dict) -> None:
-        access, refresh, id_tok, expires = self._deserialize_tokens(token_data)
+        access, refresh, id_tok = self._deserialize_tokens(token_data)
         self._access_token = access
         self._refresh_token = refresh
         self._id_token = id_tok
-        self._token_expires = expires
 
     async def authenticate(self) -> dict:
         _LOGGER.debug("Authenticating with MID...")
-        payload = dict(username=self._username, password=self._password)
+        payload: dict = {
+            "username": self._username, "password": self._password}
         if self._email:
             payload["email"] = self._email
         try:
@@ -170,45 +163,35 @@ class MidApiClient:
                 AUTH_URL, json=payload, raise_for_status=False
             ) as resp:
                 body = await resp.text()
-                _LOGGER.debug("Auth status=%s body=%s",
-                              resp.status, body[:500])
+                _LOGGER.debug("Auth status=%s", resp.status)
                 if resp.status != 200:
                     raise MidAuthError(
                         f"Auth failed: HTTP {resp.status} - {body[:300]}")
                 data = _parse_body(body)
         except ClientError as exc:
             raise MidApiError(f"Connection error during auth: {exc}") from exc
-        return self._store_auth_tokens(data)
 
-    def _store_auth_tokens(self, data: dict) -> dict:
-        result = data.get("result", data)
-        if isinstance(result, dict):
-            access = (result.get("access_token") or
-                      result.get("AccessToken") or
-                      result.get("token") or "")
-            refresh = (result.get("refresh_token") or
-                       result.get("RefreshToken") or "")
-            id_tok = (result.get("id_token") or
-                      result.get("IdToken") or "")
-            expires_in = (result.get("expires_in") or
-                          result.get("ExpiresIn") or 3600)
-        else:
-            access = refresh = id_tok = ""
-            expires_in = 3600
-        if access and not isinstance(access, str):
-            access = str(access)
+        if data.get("status") != "OK":
+            raise MidAuthError("Auth response status not OK")
+
+        inner = data.get("data", data)
+        access = inner.get("accessToken", "")
+        refresh = inner.get("refreshToken", "")
+        id_tok = inner.get("idToken", "")
+
+        if not access:
+            raise MidAuthError("No access token in auth response")
+
         self._access_token = access
-        if refresh:
-            self._refresh_token = refresh
-        if id_tok:
-            self._id_token = id_tok
-        self._token_expires = datetime.now() + timedelta(
-            seconds=min(int(expires_in or 3600), 3600))
+        self._refresh_token = refresh
+        self._id_token = id_tok
+        self._device_key = inner.get("device_key", self._device_key)
         return self._serialize_tokens()
 
     async def _refresh_access_token(self) -> dict | None:
         if not self._access_token:
             return None
+
         encoded_user = _encode_username(self._username)
         payload = {
             "token": self._access_token,
@@ -227,61 +210,58 @@ class MidApiClient:
         except ClientError as exc:
             _LOGGER.warning("Connection error during token refresh: %s", exc)
             return None
-        result = data.get("result", data)
-        if isinstance(result, dict):
-            token = (result.get("access_token") or result.get("AccessToken") or
-                     result.get("token") or result.get("id_token") or
-                     result.get("IdToken") or "")
-            expires_in = (result.get("expires_in") or
-                          result.get("ExpiresIn") or 3600)
-        else:
+
+        if data.get("status") != "OK":
             return None
-        if token and not isinstance(token, str):
-            token = str(token)
+
+        inner = data.get("data", data)
+        token = inner.get("accessToken") or inner.get("token") or ""
         if token:
             self._access_token = token
-            self._token_expires = datetime.now() + timedelta(
-                seconds=min(int(expires_in or 3600), 3600))
             return self._serialize_tokens()
         return None
 
     async def _ensure_auth(self) -> None:
-        if self._token_expires and datetime.now() < self._token_expires:
+        if not self._access_token:
+            await self.authenticate()
             return
-        if self._access_token:
-            new_tokens = await self._refresh_access_token()
-            if new_tokens:
-                return
-        tokens = await self.authenticate()
-        self.load_tokens(tokens)
+        new_tokens = await self._refresh_access_token()
+        if new_tokens:
+            return
+        if not self._access_token:
+            await self.authenticate()
 
     async def discover_account(self) -> AccountInfo:
         await self._ensure_auth()
+
         search_data = await self._post_json(USERNAME_SEARCH_URL, {
             "username": self._username,
         })
         _LOGGER.debug("Usernamesearch: %s",
                        json_mod.dumps(search_data, default=str)[:1000])
 
-        account_id = ""
-        if isinstance(search_data, dict):
-            for candidate in ("accountId", "accountid", "acctId", "account_id",
-                              "AccountId", "acct_id"):
-                val = search_data.get(candidate)
-                if isinstance(val, str) and val.strip():
-                    account_id = val.strip()
-                    break
-            if not account_id:
-                items = _flatten_search(search_data)
-                for v in items:
-                    if isinstance(v, str) and v.strip() and v.isdigit():
-                        account_id = v
-                        break
+        if search_data.get("status") != "OK":
+            raise MidAccountError("Usernamesearch returned non-OK status")
 
+        response_data = search_data.get("responseData", [])
+        if not isinstance(response_data, list) or not response_data:
+            raise MidAccountError("No responseData in usernamesearch")
+
+        user_entry = response_data[0]
+        if not isinstance(user_entry, dict):
+            raise MidAccountError("Unexpected usernamesearch format")
+
+        accounts = user_entry.get("accounts", [])
+        if not isinstance(accounts, list) or not accounts:
+            raise MidAccountError("No accounts found for user")
+
+        first_account = accounts[0]
+        if not isinstance(first_account, dict):
+            raise MidAccountError("Unexpected account format")
+
+        account_id = first_account.get("accountId", "")
         if not account_id:
-            raise MidAccountError(
-                "Could not discover account ID. "
-                "Check HA logs for usernamesearch response.")
+            raise MidAccountError("No accountId found")
 
         self._account_id = account_id
 
@@ -374,14 +354,12 @@ class MidApiClient:
             headers["Authorization"] = f"Bearer {self._access_token}"
         try:
             async with self._session.post(
-                url, json=payload, headers=headers, raise_for_status=False,
+                url, json=payload, headers=headers,
+                raise_for_status=False,
             ) as resp:
                 body = await resp.text()
-                _LOGGER.debug("POST %s status=%s len=%s",
-                              url.split("/")[-1], resp.status, len(body))
                 if resp.status == 401:
                     self._access_token = None
-                    self._token_expires = None
                     await self._ensure_auth()
                     return await self._post_json(url, payload)
                 if resp.status != 200:
@@ -394,6 +372,7 @@ class MidApiClient:
     def _parse_usage_response(data: dict) -> MidUsageData:
         usage_periods: list[UsagePeriod] = []
         overlay_periods: list[OverlayPeriod] = []
+
         usage_data = data.get("usagePeriods", {})
         if isinstance(usage_data, dict):
             for period in usage_data.get("periods", []):
@@ -409,6 +388,7 @@ class MidApiClient:
                     ))
                 except (ValueError, TypeError):
                     continue
+
         overlay_data = data.get("overlayQuantities", {})
         if isinstance(overlay_data, dict):
             for period in overlay_data.get("periods", []):
@@ -423,28 +403,13 @@ class MidApiClient:
                     ))
                 except (ValueError, TypeError):
                     continue
+
         channels = data.get("channels", {})
         if not isinstance(channels, dict):
             channels = {}
+
         return MidUsageData(
             monthly_periods=usage_periods,
             overlay_periods=overlay_periods,
             channels=channels,
         )
-
-
-def _flatten_search(data: dict) -> list[Any]:
-    """Flatten nested dict to find account ID values."""
-    result: list[Any] = []
-    for key, val in data.items():
-        if isinstance(val, str):
-            result.append(val)
-        elif isinstance(val, dict):
-            result.extend(_flatten_search(val))
-        elif isinstance(val, list):
-            for item in val:
-                if isinstance(item, dict):
-                    result.extend(_flatten_search(item))
-                elif isinstance(item, str):
-                    result.append(item)
-    return result
