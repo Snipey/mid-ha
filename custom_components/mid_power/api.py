@@ -199,6 +199,10 @@ class MidApiClient:
         if not access:
             raise MidAuthError("No access token in auth response")
 
+        if access:
+            _LOGGER.warning("Auth succeeded, got access token (%d chars)", len(access))
+        else:
+            _LOGGER.error("Auth response had no accessToken!")
         self._access_token = access
         self._refresh_token = refresh
         self._id_token = id_tok
@@ -252,11 +256,13 @@ class MidApiClient:
         return None
 
     async def _ensure_auth(self) -> None:
-        if self._refresh_token:
+        if self._refresh_token and self._device_key and self._internal_username:
             new_tokens = await self._refresh_access_token()
             if new_tokens:
                 return
-        _LOGGER.warning("Refreshing token failed, re-authenticating...")
+            _LOGGER.warning("Refreshing token failed, re-authenticating...")
+        else:
+            _LOGGER.warning("Missing device_key or internal_username, re-authenticating...")
         try:
             await self.authenticate()
         except MidApiError as exc:
