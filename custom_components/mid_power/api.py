@@ -167,11 +167,6 @@ class MidApiClient:
             self._device_key = device_key
         if internal_user:
             self._internal_username = internal_user
-        _LOGGER.warning("Loaded tokens: access=%s, refresh=%s, device=%s, user=%s",
-                        "yes" if access else "no",
-                        "yes" if refresh else "no",
-                        device_key[:30] if device_key else "MISSING",
-                        internal_user[:20] if internal_user else "MISSING")
 
     async def authenticate(self) -> dict:
         _LOGGER.warning("Authenticating with MID as %s", self._email)
@@ -205,9 +200,7 @@ class MidApiClient:
             raise MidAuthError("No access token in auth response")
 
         if access:
-            _LOGGER.warning("Auth succeeded: access=%d chars, refresh=%d chars, device=%s, user=%s",
-                            len(access), len(refresh) if refresh else 0,
-                            self._device_key[:30], self._internal_username[:20])
+            _LOGGER.info("Auth succeeded, got access token (%d chars)", len(access))
         else:
             _LOGGER.error("Auth response had no accessToken!")
         self._access_token = access
@@ -365,10 +358,17 @@ class MidApiClient:
             _LOGGER.error("Daily usage failed: %s: %s", type(exc).__name__, exc)
             raise
 
+        try:
+            overlay_data = await self._fetch_overlay_usage(
+                start_date, end_date)
+        except Exception as exc:
+            _LOGGER.warning("Overlay fetch failed (non-critical): %s", exc)
+            overlay_data = MidUsageData()
+
         return MidUsageData(
             monthly_periods=monthly_data.monthly_periods,
             daily_periods=daily_data.monthly_periods,
-            overlay_periods=monthly_data.overlay_periods,
+            overlay_periods=overlay_data.overlay_periods,
             channels=monthly_data.channels,
         )
 
@@ -381,8 +381,17 @@ class MidApiClient:
             "tou": "", "sqi": SQI_CONSUMED, "netMeteringGroup": "",
             "measuringComponentId": "", "isTotalizationChannel": "",
         }})
-        _LOGGER.warning("Monthly raw response keys: %s",
-                        list(raw.keys()) if isinstance(raw, dict) else type(raw))
+        return self._parse_usage_response(raw)
+
+    async def _fetch_overlay_usage(self, start_date: str,
+                                   end_date: str) -> MidUsageData:
+        raw = await self._post_json(USAGE_URL, {"payload": {
+            "usId": self._us_id,
+            "startDate": start_date, "endDate": end_date,
+            "displayMode": DISP_MODE, "uom": "", "tou": "", "sqi": "",
+            "overlayMode": OVERLAY_MODE, "netMeteringGroup": "",
+            "measuringComponentId": "", "isTotalizationChannel": "",
+        }})
         return self._parse_usage_response(raw)
 
     async def _fetch_daily_usage(self) -> MidUsageData:
