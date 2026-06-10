@@ -97,8 +97,13 @@ class MidUsageCoordinator(DataUpdateCoordinator[MidUsageData]):
             data = await self._client.fetch_all_usage()
         except MidApiError as exc:
             _LOGGER.error("MID data fetch failed: %s", exc)
+            self._maybe_update_tokens()
             raise UpdateFailed(str(exc)) from exc
 
+        self._maybe_update_tokens()
+        return data
+
+    def _maybe_update_tokens(self) -> None:
         new_token_data = self._client._serialize_tokens()
         current_token_data = self._entry.data.get("token_data", {})
         if new_token_data != current_token_data:
@@ -107,5 +112,3 @@ class MidUsageCoordinator(DataUpdateCoordinator[MidUsageData]):
             self.hass.config_entries.async_update_entry(
                 self._entry, data=new_data
             )
-
-        return data

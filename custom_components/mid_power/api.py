@@ -265,18 +265,15 @@ class MidApiClient:
         return None
 
     async def _ensure_auth(self) -> None:
-        if self._refresh_token and self._device_key and self._internal_username:
+        # Never try refresh with a locally-generated device_key
+        if self._device_key and self._internal_username:
             new_tokens = await self._refresh_access_token()
             if new_tokens:
                 return
-            _LOGGER.warning("Refreshing token failed, re-authenticating...")
+            _LOGGER.warning("Refresh failed, re-authenticating...")
         else:
-            _LOGGER.warning("Missing device_key or internal_username, re-authenticating...")
-        try:
-            await self.authenticate()
-        except MidApiError as exc:
-            _LOGGER.error("Re-authentication failed: %s", exc)
-            raise
+            _LOGGER.warning("No device_key stored, re-authenticating...")
+        await self.authenticate()
 
     async def discover_account(self) -> AccountInfo:
         await self._ensure_auth()
