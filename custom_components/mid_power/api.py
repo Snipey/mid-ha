@@ -379,7 +379,6 @@ class MidApiClient:
             "startDate": start_date, "endDate": end_date,
             "displayMode": DISP_MODE, "uom": UOM_KWH_D,
             "tou": "", "sqi": SQI_CONSUMED, "netMeteringGroup": "",
-            "overlayMode": OVERLAY_MODE,
             "measuringComponentId": "", "isTotalizationChannel": "",
         }})
         _LOGGER.warning("Monthly raw response keys: %s",

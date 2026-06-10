@@ -85,9 +85,9 @@ class MidBaseSensor(CoordinatorEntity[MidUsageCoordinator], SensorEntity):
     """Base sensor for MID power usage."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
-    _attr_state_class = SensorStateClass.TOTAL
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_has_entity_name = True
+    _attr_suggested_display_precision = 1
 
     def __init__(self, coordinator: MidUsageCoordinator,
                  entry: ConfigEntry) -> None:
@@ -163,6 +163,7 @@ class MidLatestMonthlySensor(MidBaseSensor):
         name="Latest monthly usage",
         icon="mdi:flash",
     )
+    _attr_state_class = SensorStateClass.TOTAL
 
     @property
     def native_value(self) -> StateType:
@@ -196,6 +197,7 @@ class MidTotalUsageSensor(MidBaseSensor):
         name="Total period usage",
         icon="mdi:flash",
     )
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
 
     @property
     def native_value(self) -> StateType:
@@ -216,6 +218,7 @@ class MidAverageMonthlySensor(MidBaseSensor):
         name="Average monthly usage",
         icon="mdi:flash",
     )
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> StateType:
@@ -237,6 +240,7 @@ class MidPeakMonthlySensor(MidBaseSensor):
         name="Peak monthly usage",
         icon="mdi:flash-alert",
     )
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> StateType:
@@ -260,6 +264,7 @@ class MidLatestDailySensor(MidBaseSensor):
         name="Latest daily usage",
         icon="mdi:flash-outline",
     )
+    _attr_state_class = SensorStateClass.TOTAL
 
     @property
     def native_value(self) -> StateType:
@@ -292,6 +297,7 @@ class MidAverageDailySensor(MidBaseSensor):
         name="Average daily usage",
         icon="mdi:flash-outline",
     )
+    _attr_state_class = SensorStateClass.MEASUREMENT
 
     @property
     def native_value(self) -> StateType:
