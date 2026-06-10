@@ -398,8 +398,8 @@ class MidApiClient:
                 body = await resp.text()
                 if resp.status == 401:
                     self._access_token = None
-                    await self._ensure_auth()
-                    return await self._post_json(url, payload)
+                    self._refresh_token = None
+                    raise MidApiError("HTTP 401 — will re-auth on next poll")
                 if resp.status != 200:
                     raise MidApiError(f"HTTP {resp.status}")
                 return _parse_body(body)
