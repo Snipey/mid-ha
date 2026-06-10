@@ -1,0 +1,22 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "MID Power Usage",
+        "description": "Enter your MID MyAccount credentials.\n\nThe US ID can be found by inspecting network requests on myaccount.mid.org - look for 'usId' in the getUsageDisplay request payload.",
+        "data": {
+          "username": "Username",
+          "password": "Password",
+          "us_id": "Usage Service ID (US ID)"
+        }
+      }
+    },
+    "error": {
+      "auth": "Authentication failed. Check your username and password.",
+      "unknown": "An unknown error occurred."
+    },
+    "abort": {
+      "already_configured": "This account is already configured."
+    }
+  }
+}
