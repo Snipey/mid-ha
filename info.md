@@ -1,4 +1,4 @@
-# MID Power Usage
+# Modesto Irrigation District
 
 Home Assistant integration for Modesto Irrigation District (MID) electric usage monitoring.
 
@@ -7,11 +7,14 @@ Home Assistant integration for Modesto Irrigation District (MID) electric usage 
 ## Features
 
 - Retrieves monthly electric usage data from your MID account
+- Daily usage monitoring with day-over-day comparison
 - Provides sensors for:
   - Latest billing month usage (kWh)
   - Total period usage (kWh)
   - Average monthly usage (kWh)
   - Peak monthly usage (kWh)
+  - Latest daily usage (kWh)
+  - Average daily usage (kWh)
 - Includes comparison to "normal" usage (overlay data from MID)
 - Automatic token refresh for persistent access
 
@@ -33,18 +36,13 @@ Home Assistant integration for Modesto Irrigation District (MID) electric usage 
 ## Configuration
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
-2. Search for "MID Power Usage"
+2. Search for "Modesto Irrigation District"
 3. Enter your MID account credentials:
    - **Username**: Your MID internal username (found in network requests to `/cognito/auth` on the MID portal)
    - **Password**: Your MID MyAccount password
-   - **Usage Service ID (US ID)**: Found by inspecting network requests for `getUsageDisplay` on the MID portal — look for `usId` in the request payload
+   - **Account ID**: Your MID account number (found on your bill or in MyAccount)
 
-### Finding your US ID
-
-1. Log into [myaccount.mid.org](https://myaccount.mid.org)
-2. Open browser DevTools (F12) → Network tab
-3. Look for requests to `getUsageDisplay`
-4. In the request payload, find the `usId` value (e.g. `781247994300`)
+The US ID and premise info will be discovered automatically.
 
 ## Sensors
 
@@ -54,3 +52,5 @@ Home Assistant integration for Modesto Irrigation District (MID) electric usage 
 | `sensor.mid_power_total_period_usage` | Total kWh across all retrieved billing months |
 | `sensor.mid_power_average_monthly_usage` | Average kWh per billing month |
 | `sensor.mid_power_peak_monthly_usage` | Highest single-month kWh in the period |
+| `sensor.mid_power_latest_daily_usage` | kWh used on the most recent day |
+| `sensor.mid_power_average_daily_usage` | Average daily kWh over the past ~35 days |

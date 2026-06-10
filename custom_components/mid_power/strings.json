@@ -5,14 +5,15 @@
         "data": {
           "username": "Username",
           "password": "Password",
-          "us_id": "Usage Service ID (US ID)"
+          "account_id": "Account ID"
         },
-        "description": "Enter your MID MyAccount credentials.\n\nThe US ID can be found by logging into https://myaccount.mid.org and inspecting the network requests for 'getUsageDisplay' - look for 'usId' in the request payload.",
-        "title": "MID Power Usage"
+        "description": "Enter your MID MyAccount credentials. The US ID will be discovered automatically.",
+        "title": "Modesto Irrigation District"
       }
     },
     "error": {
       "auth": "Authentication failed. Check your username and password.",
+      "account": "Failed to find usage subscriptions for this account. Verify your Account ID.",
       "unknown": "An unknown error occurred."
     },
     "abort": {

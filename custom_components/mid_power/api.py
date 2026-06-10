@@ -8,7 +8,7 @@ import json as json_mod
 import logging
 import uuid
 from datetime import datetime, timedelta
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from aiohttp import ClientSession, ClientError
 
@@ -16,7 +16,9 @@ from .const import (
     AUTH_URL,
     REFRESH_URL,
     USAGE_URL,
+    ACCOUNT_INFO_URL,
     DISP_MODE,
+    DISP_MODE_DAILY,
     UOM_KWH_D,
     SQI_CONSUMED,
     OVERLAY_MODE,
@@ -39,9 +41,30 @@ def _parse_body(body: str) -> dict:
         return {}
 
 
+# --- data types ---
+
+
+@dataclass
+class AccountInfo:
+    """Discovered account information from the MID API."""
+    us_id: str = ""
+    us_external_id: str = ""
+    premise_info: str = ""
+    us_info: str = ""
+    us_type: str = ""
+    us_type_description: str = ""
+    customer_name: str = ""
+    address_line1: str = ""
+    city: str = ""
+    state: str = ""
+    postal: str = ""
+    bill_amount: str = "0.00"
+    bill_due_date: str = ""
+
+
 @dataclass
 class UsagePeriod:
-    """A single billing period usage record."""
+    """A single usage period record (monthly or daily)."""
     date: str
     uom: str
     tou: str
@@ -61,10 +84,13 @@ class OverlayPeriod:
 @dataclass
 class MidUsageData:
     """Parsed usage data from the MID API."""
-    usage_periods: list[UsagePeriod]
-    overlay_periods: list[OverlayPeriod]
-    channels: dict
-    raw: dict
+    monthly_periods: list[UsagePeriod] = field(default_factory=list)
+    daily_periods: list[UsagePeriod] = field(default_factory=list)
+    overlay_periods: list[OverlayPeriod] = field(default_factory=list)
+    channels: dict = field(default_factory=dict)
+
+
+# --- errors ---
 
 
 class MidApiError(Exception):
@@ -75,18 +101,26 @@ class MidAuthError(MidApiError):
     """Authentication error."""
 
 
+class MidAccountError(MidApiError):
+    """Account lookup error."""
+
+
+# --- client ---
+
+
 class MidApiClient:
     """Async client for the MID API."""
 
     def __init__(self, session: ClientSession, username: str, password: str,
-                 us_id: str):
+                 account_id: str):
         self._session = session
         self._username = username
         self._password = password
-        self._us_id = us_id
+        self._account_id = account_id
+        self._us_id: str | None = None
 
         stored = (hashlib.sha256(username.encode()).hexdigest() +
-                  hashlib.sha256(us_id.encode()).hexdigest())
+                  hashlib.sha256(account_id.encode()).hexdigest())
         device_uuid = str(uuid.UUID(
             stored[0:8] + "-" + stored[8:12] + "-" +
             stored[12:16] + "-" + stored[16:20] + "-" +
@@ -98,6 +132,13 @@ class MidApiClient:
         self._refresh_token: str | None = None
         self._id_token: str | None = None
         self._token_expires: datetime | None = None
+
+    @property
+    def us_id(self) -> str | None:
+        return self._us_id
+
+    def set_us_id(self, us_id: str) -> None:
+        self._us_id = us_id
 
     # --- token management ---
 
@@ -177,7 +218,6 @@ class MidApiClient:
         return self._serialize_tokens()
 
     async def _refresh_access_token(self) -> dict | None:
-        """Refresh the access token."""
         if not self._access_token:
             return None
 
@@ -193,7 +233,8 @@ class MidApiClient:
                 REFRESH_URL, json=payload, raise_for_status=False
             ) as resp:
                 body = await resp.text()
-                _LOGGER.debug("Refresh status=%s body=%s", resp.status, body[:500])
+                _LOGGER.debug("Refresh status=%s body=%s",
+                              resp.status, body[:500])
                 if resp.status != 200:
                     _LOGGER.warning("Token refresh failed: %s", body[:200])
                     return None
@@ -231,6 +272,54 @@ class MidApiClient:
         tokens = await self.authenticate()
         self.load_tokens(tokens)
 
+    # --- account discovery ---
+
+    async def discover_account(self) -> AccountInfo:
+        """Discover account details and US ID from MID API."""
+        await self._ensure_auth()
+
+        result = AccountInfo()
+
+        detail_data = await self._post_json(ACCOUNT_INFO_URL, {
+            "payload": {"accounts": [{"accountId": self._account_id}]}
+        })
+        if isinstance(detail_data, dict):
+            addr = detail_data.get("addressInfo", {})
+            if isinstance(addr, dict):
+                result.customer_name = detail_data.get(
+                    "mainCustomerName", "")
+                result.address_line1 = addr.get("addressLine1", "")
+                result.city = addr.get("city", "")
+                result.state = addr.get("state", "")
+                result.postal = addr.get("postal", "")
+            bill = detail_data.get("billInfo", {})
+            if isinstance(bill, dict):
+                result.bill_amount = bill.get("totalAmount", "0.00")
+                result.bill_due_date = bill.get("dueDate", "")
+
+        sub_data = await self._post_json(USAGE_URL, {
+            "payload": {"accountId": self._account_id}
+        })
+        if isinstance(sub_data, dict):
+            sub = sub_data.get("usageSubscriptions", {})
+            if isinstance(sub, dict):
+                us_id = sub.get("usId", "")
+                if us_id:
+                    self._us_id = us_id
+                result.us_id = us_id
+                result.us_external_id = sub.get("usExternalId", "")
+                result.premise_info = sub.get("premiseInfo", "")
+                result.us_info = sub.get("usInfo", "")
+                result.us_type = sub.get("usType", "")
+                result.us_type_description = sub.get(
+                    "usTypeDescription", "")
+
+        if not result.us_id:
+            raise MidAccountError(
+                "No usage subscriptions found for this account")
+
+        return result
+
     # --- usage data ---
 
     async def fetch_all_usage(
@@ -238,8 +327,11 @@ class MidApiClient:
         start_date: str | None = None,
         end_date: str | None = None,
     ) -> MidUsageData:
-        """Fetch both usage periods and overlay data in one call."""
+        """Fetch monthly, overlay, and daily usage data."""
         await self._ensure_auth()
+
+        if not self._us_id:
+            raise MidApiError("US ID not set — call discover_account first")
 
         if not start_date:
             start_date = (datetime.now() - timedelta(days=365)).strftime(
@@ -247,6 +339,18 @@ class MidApiClient:
         if not end_date:
             end_date = datetime.now().strftime("%Y-%m-%d")
 
+        monthly = await self._fetch_monthly_usage(start_date, end_date)
+        daily = await self._fetch_daily_usage()
+
+        return MidUsageData(
+            monthly_periods=monthly.usage_periods,
+            daily_periods=daily.usage_periods,
+            overlay_periods=monthly.overlay_periods,
+            channels=monthly.channels,
+        )
+
+    async def _fetch_monthly_usage(self, start_date: str,
+                                   end_date: str) -> MidUsageData:
         payload_data = {
             "usId": self._us_id,
             "startDate": start_date,
@@ -260,31 +364,54 @@ class MidApiClient:
             "measuringComponentId": "",
             "isTotalizationChannel": "",
         }
+        raw = await self._post_json(USAGE_URL, {"payload": payload_data})
+        return self._parse_usage_response(raw)
 
-        raw_data = await self._post_usage({"payload": payload_data})
-        return self._parse_usage_response(raw_data)
+    async def _fetch_daily_usage(self,
+                                 start_date: str | None = None,
+                                 end_date: str | None = None) -> MidUsageData:
+        if not start_date:
+            start_date = (datetime.now() - timedelta(days=35)).strftime(
+                "%Y-%m-%d")
+        if not end_date:
+            end_date = datetime.now().strftime("%Y-%m-%d")
 
-    async def _post_usage(self, payload: dict) -> dict:
+        payload_data = {
+            "usId": self._us_id,
+            "startDate": start_date,
+            "endDate": end_date,
+            "displayMode": DISP_MODE_DAILY,
+            "uom": UOM_KWH_D,
+            "tou": "",
+            "sqi": SQI_CONSUMED,
+            "netMeteringGroup": "",
+            "measuringComponentId": "",
+            "isTotalizationChannel": "",
+        }
+        raw = await self._post_json(USAGE_URL, {"payload": payload_data})
+        return self._parse_usage_response(raw)
+
+    # --- HTTP helpers ---
+
+    async def _post_json(self, url: str, payload: dict) -> dict:
         headers = {}
         if self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
 
         try:
             async with self._session.post(
-                USAGE_URL, json=payload, headers=headers,
+                url, json=payload, headers=headers,
                 raise_for_status=False,
             ) as resp:
                 body = await resp.text()
-                _LOGGER.debug("Usage status=%s body_len=%s",
-                              resp.status, len(body))
                 if resp.status == 401:
                     self._access_token = None
                     self._token_expires = None
                     await self._ensure_auth()
-                    return await self._post_usage(payload)
+                    return await self._post_json(url, payload)
                 if resp.status != 200:
                     raise MidApiError(
-                        f"Usage request failed: HTTP {resp.status}")
+                        f"Request failed: HTTP {resp.status}")
                 return _parse_body(body)
         except ClientError as exc:
             raise MidApiError(f"Connection error: {exc}") from exc
@@ -331,8 +458,7 @@ class MidApiClient:
             channels = {}
 
         return MidUsageData(
-            usage_periods=usage_periods,
+            monthly_periods=usage_periods,
             overlay_periods=overlay_periods,
             channels=channels,
-            raw=data,
         )

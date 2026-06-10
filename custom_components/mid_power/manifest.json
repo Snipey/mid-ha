@@ -1,6 +1,6 @@
 {
   "domain": "mid_power",
-  "name": "MID Power Usage",
+  "name": "Modesto Irrigation District",
   "codeowners": [],
   "config_flow": true,
   "dependencies": [],

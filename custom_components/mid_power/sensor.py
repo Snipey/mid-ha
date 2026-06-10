@@ -22,6 +22,7 @@ from . import MidUsageCoordinator
 from .api import UsagePeriod, OverlayPeriod
 from .const import (
     DOMAIN,
+    CONF_US_ID,
     ATTR_READING_DATE,
     ATTR_BILLING_PERIODS,
     ATTR_PERIOD_START,
@@ -30,6 +31,8 @@ from .const import (
     ATTR_SQI,
     ATTR_HIGHEST_MONTH,
     ATTR_LOWEST_MONTH,
+    ATTR_PREMISE_INFO,
+    ATTR_US_TYPE,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,16 +64,24 @@ async def async_setup_entry(
     domain_data = hass.data[DOMAIN]
     coordinator = domain_data[entry.entry_id]["coordinator"]
 
-    entities: list[SensorEntity] = [
-        MidLatestUsageSensor(coordinator, entry),
+    us_id = entry.data.get(CONF_US_ID, "")
+    if not us_id:
+        _LOGGER.warning("No US ID in config entry — skipping sensor setup")
+        return
+
+    async_add_entities([
+        # Monthly sensors
+        MidLatestMonthlySensor(coordinator, entry),
         MidTotalUsageSensor(coordinator, entry),
-        MidAverageUsageSensor(coordinator, entry),
-        MidPeakUsageSensor(coordinator, entry),
-    ]
-    async_add_entities(entities)
+        MidAverageMonthlySensor(coordinator, entry),
+        MidPeakMonthlySensor(coordinator, entry),
+        # Daily sensors
+        MidLatestDailySensor(coordinator, entry),
+        MidAverageDailySensor(coordinator, entry),
+    ])
 
 
-class MidUsageBaseSensor(CoordinatorEntity[MidUsageCoordinator], SensorEntity):
+class MidBaseSensor(CoordinatorEntity[MidUsageCoordinator], SensorEntity):
     """Base sensor for MID power usage."""
 
     _attr_device_class = SensorDeviceClass.ENERGY
@@ -83,13 +94,13 @@ class MidUsageBaseSensor(CoordinatorEntity[MidUsageCoordinator], SensorEntity):
         super().__init__(coordinator)
         self._entry = entry
         self._attr_unique_id = (
-            f"{entry.data['us_id']}_{self.entity_description.key}"
+            f"{entry.data[CONF_US_ID]}_{self.entity_description.key}"
         )
         self._attr_device_info = {
             "identifiers": {(DOMAIN, entry.entry_id)},
-            "name": "MID Power Usage",
+            "name": entry.title,
             "manufacturer": "Modesto Irrigation District",
-            "model": "Usage Service",
+            "model": entry.data.get("us_type", "Residential"),
         }
 
     @property
@@ -97,48 +108,54 @@ class MidUsageBaseSensor(CoordinatorEntity[MidUsageCoordinator], SensorEntity):
         return self.coordinator.last_update_success
 
     @property
-    def _usage_periods(self) -> list[UsagePeriod]:
+    def _monthly(self) -> list[UsagePeriod]:
         if self.coordinator.data is None:
             return []
-        return self.coordinator.data.usage_periods
+        return self.coordinator.data.monthly_periods
 
     @property
-    def _overlay_periods(self) -> list[OverlayPeriod]:
+    def _daily(self) -> list[UsagePeriod]:
+        if self.coordinator.data is None:
+            return []
+        return self.coordinator.data.daily_periods
+
+    @property
+    def _overlay(self) -> list[OverlayPeriod]:
         if self.coordinator.data is None:
             return []
         return self.coordinator.data.overlay_periods
 
-    @property
-    def _channels(self) -> dict:
-        if self.coordinator.data is None:
-            return {}
-        return self.coordinator.data.channels
-
-    def _build_base_attrs(self) -> dict:
-        usage = self._usage_periods
-        if not usage:
-            return {}
-        dates = [p.date for p in usage]
+    def _build_monthly_attrs(self) -> dict:
+        monthly = self._monthly
+        attrs: dict = {
+            ATTR_PREMISE_INFO: self._entry.data.get("premise_info", ""),
+            ATTR_US_TYPE: self._entry.data.get("us_type", ""),
+        }
+        if not monthly:
+            return attrs
+        dates = [p.date for p in monthly]
         sorted_dates = sorted(dates)
-        quantities = [p.quantity for p in usage]
+        quantities = [p.quantity for p in monthly]
         peak = max(quantities)
         low = min(quantities)
-        return {
-            ATTR_BILLING_PERIODS: len(usage),
-            ATTR_PERIOD_START: _parse_date(sorted_dates[0]) if sorted_dates else None,
-            ATTR_PERIOD_END: _parse_date(sorted_dates[-1]) if sorted_dates else None,
-            ATTR_UOM: usage[0].uom if usage else None,
-            ATTR_SQI: usage[0].sqi if usage else None,
+        attrs.update({
+            ATTR_BILLING_PERIODS: len(monthly),
+            ATTR_PERIOD_START: _parse_date(sorted_dates[0]),
+            ATTR_PERIOD_END: _parse_date(sorted_dates[-1]),
+            ATTR_UOM: monthly[0].uom,
+            ATTR_SQI: monthly[0].sqi,
             ATTR_HIGHEST_MONTH: _parse_date(
-                usage[quantities.index(peak)].date
-            ) if usage else None,
+                monthly[quantities.index(peak)].date),
             ATTR_LOWEST_MONTH: _parse_date(
-                usage[quantities.index(low)].date
-            ) if usage else None,
-        }
+                monthly[quantities.index(low)].date),
+        })
+        return attrs
 
 
-class MidLatestUsageSensor(MidUsageBaseSensor):
+# --- Monthly sensors ---
+
+
+class MidLatestMonthlySensor(MidBaseSensor):
     """Sensor for the most recent billing month usage."""
 
     entity_description = SensorEntityDescription(
@@ -149,31 +166,30 @@ class MidLatestUsageSensor(MidUsageBaseSensor):
 
     @property
     def native_value(self) -> StateType:
-        usage = self._usage_periods
-        if usage:
-            return round(usage[-1].quantity, 1)
+        if self._monthly:
+            return round(self._monthly[-1].quantity, 1)
         return None
 
     @property
     def extra_state_attributes(self) -> dict:
-        attrs = self._build_base_attrs()
-        usage = self._usage_periods
-        if usage:
-            latest = usage[-1]
+        attrs = self._build_monthly_attrs()
+        monthly = self._monthly
+        if monthly:
+            latest = monthly[-1]
             attrs[ATTR_READING_DATE] = _parse_date(latest.date)
-            overlay = self._overlay_periods
-            if overlay and len(overlay) == len(usage):
+            overlay = self._overlay
+            if overlay and len(overlay) == len(monthly):
                 ov = overlay[-1]
                 attrs["comparison_normal"] = ov.quantity
                 attrs["comparison_min"] = ov.min_quantity
                 attrs["comparison_max"] = ov.max_quantity
-                diff = latest.quantity - ov.quantity
-                attrs["difference_vs_normal"] = round(diff, 1)
+                attrs["difference_vs_normal"] = round(
+                    latest.quantity - ov.quantity, 1)
         return attrs
 
 
-class MidTotalUsageSensor(MidUsageBaseSensor):
-    """Sensor for total usage across all retrieved billing months."""
+class MidTotalUsageSensor(MidBaseSensor):
+    """Sensor for total usage across all billing months."""
 
     entity_description = SensorEntityDescription(
         key="total_period_usage",
@@ -183,17 +199,16 @@ class MidTotalUsageSensor(MidUsageBaseSensor):
 
     @property
     def native_value(self) -> StateType:
-        usage = self._usage_periods
-        if usage:
-            return round(sum(p.quantity for p in usage), 1)
+        if self._monthly:
+            return round(sum(p.quantity for p in self._monthly), 1)
         return None
 
     @property
     def extra_state_attributes(self) -> dict:
-        return self._build_base_attrs()
+        return self._build_monthly_attrs()
 
 
-class MidAverageUsageSensor(MidUsageBaseSensor):
+class MidAverageMonthlySensor(MidBaseSensor):
     """Sensor for average monthly usage."""
 
     entity_description = SensorEntityDescription(
@@ -204,17 +219,17 @@ class MidAverageUsageSensor(MidUsageBaseSensor):
 
     @property
     def native_value(self) -> StateType:
-        usage = self._usage_periods
-        if usage:
-            return round(sum(p.quantity for p in usage) / len(usage), 1)
+        if self._monthly:
+            return round(
+                sum(p.quantity for p in self._monthly) / len(self._monthly), 1)
         return None
 
     @property
     def extra_state_attributes(self) -> dict:
-        return self._build_base_attrs()
+        return self._build_monthly_attrs()
 
 
-class MidPeakUsageSensor(MidUsageBaseSensor):
+class MidPeakMonthlySensor(MidBaseSensor):
     """Sensor for the highest single-month usage."""
 
     entity_description = SensorEntityDescription(
@@ -225,11 +240,75 @@ class MidPeakUsageSensor(MidUsageBaseSensor):
 
     @property
     def native_value(self) -> StateType:
-        usage = self._usage_periods
-        if usage:
-            return round(max(p.quantity for p in usage), 1)
+        if self._monthly:
+            return round(max(p.quantity for p in self._monthly), 1)
         return None
 
     @property
     def extra_state_attributes(self) -> dict:
-        return self._build_base_attrs()
+        return self._build_monthly_attrs()
+
+
+# --- Daily sensors ---
+
+
+class MidLatestDailySensor(MidBaseSensor):
+    """Sensor for the most recent daily usage."""
+
+    entity_description = SensorEntityDescription(
+        key="latest_daily_usage",
+        name="Latest daily usage",
+        icon="mdi:flash-outline",
+    )
+
+    @property
+    def native_value(self) -> StateType:
+        if self._daily:
+            return round(self._daily[-1].quantity, 1)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        daily = self._daily
+        attrs: dict = {}
+        if daily:
+            latest = daily[-1]
+            attrs[ATTR_READING_DATE] = _parse_date(latest.date)
+            attrs["days_in_period"] = len(daily)
+            if len(daily) >= 2:
+                prev = daily[-2]
+                attrs["previous_day"] = round(prev.quantity, 1)
+                attrs["day_change_pct"] = round(
+                    (latest.quantity - prev.quantity) / prev.quantity * 100, 1
+                ) if prev.quantity else 0
+        return attrs
+
+
+class MidAverageDailySensor(MidBaseSensor):
+    """Sensor for average daily usage over the period."""
+
+    entity_description = SensorEntityDescription(
+        key="average_daily_usage",
+        name="Average daily usage",
+        icon="mdi:flash-outline",
+    )
+
+    @property
+    def native_value(self) -> StateType:
+        if self._daily:
+            return round(
+                sum(p.quantity for p in self._daily) / len(self._daily), 1)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        daily = self._daily
+        attrs: dict = {}
+        if daily:
+            attrs["days_in_period"] = len(daily)
+            quantities = [p.quantity for p in daily]
+            attrs["peak_daily"] = round(max(quantities), 1)
+            attrs["lowest_daily"] = round(min(quantities), 1)
+            peak_day = _parse_date(daily[quantities.index(max(quantities))].date)
+            attrs["peak_day_date"] = peak_day
+        return attrs

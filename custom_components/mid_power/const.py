@@ -4,12 +4,14 @@ DOMAIN = "mid_power"
 
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
+CONF_ACCOUNT_ID = "account_id"
 CONF_US_ID = "us_id"
 
 API_BASE_URL = "https://ocx-be-prod.myaccount.mid.org"
 AUTH_URL = f"{API_BASE_URL}/cognito/auth"
 REFRESH_URL = f"{API_BASE_URL}/cognito/refreshToken"
 USAGE_URL = f"{API_BASE_URL}/ouaf/getUsageDisplay"
+ACCOUNT_INFO_URL = f"{API_BASE_URL}/ouaf/accountInfo"
 
 POLL_INTERVAL_MINUTES = 60
 
@@ -21,8 +23,11 @@ ATTR_UOM = "uom"
 ATTR_SQI = "sqi"
 ATTR_HIGHEST_MONTH = "highest_month"
 ATTR_LOWEST_MONTH = "lowest_month"
+ATTR_PREMISE_INFO = "premise_info"
+ATTR_US_TYPE = "us_type"
 
 DISP_MODE = "D2BM"
+DISP_MODE_DAILY = "D2BH"
 UOM_KWH_D = "KWH-D"
 SQI_CONSUMED = "CONSUMED"
 OVERLAY_MODE = "D2TF"

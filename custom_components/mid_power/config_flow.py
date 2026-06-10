@@ -10,15 +10,15 @@ from homeassistant import config_entries
 from homeassistant.core import callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
-from .api import MidApiClient, MidAuthError, MidApiError
-from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_US_ID
+from .api import MidApiClient, MidAuthError, MidAccountError, MidApiError
+from .const import DOMAIN, CONF_USERNAME, CONF_PASSWORD, CONF_ACCOUNT_ID, CONF_US_ID
 
 _LOGGER = logging.getLogger(__name__)
 
 AUTH_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_USERNAME): str,
     vol.Required(CONF_PASSWORD): str,
-    vol.Required(CONF_US_ID): str,
+    vol.Required(CONF_ACCOUNT_ID): str,
 })
 
 
@@ -34,34 +34,60 @@ class MidPowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            await self.async_set_unique_id(user_input[CONF_US_ID])
-            self._abort_if_unique_id_configured()
-
             session = async_get_clientsession(self.hass)
             client = MidApiClient(
                 session,
                 user_input[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
-                user_input[CONF_US_ID],
+                user_input[CONF_ACCOUNT_ID],
             )
+
             try:
                 token_data = await client.authenticate()
+                _LOGGER.debug("Auth succeeded, discovering account...")
+                account_info = await client.discover_account()
             except MidAuthError:
                 errors["base"] = "auth"
-            except MidApiError:
-                errors["base"] = "unknown"
-            except Exception:
-                _LOGGER.exception("Unexpected error during auth")
-                errors["base"] = "unknown"
-
-            if not errors:
+            except MidAccountError:
+                errors["base"] = "account"
+                token_data = client._serialize_tokens()
+                await self.async_set_unique_id(user_input[CONF_ACCOUNT_ID])
+                self._abort_if_unique_id_configured()
                 return self.async_create_entry(
-                    title=f"MID Power ({user_input[CONF_US_ID]})",
+                    title=f"MID Power ({user_input[CONF_ACCOUNT_ID]})",
                     data={
                         CONF_USERNAME: user_input[CONF_USERNAME],
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
-                        CONF_US_ID: user_input[CONF_US_ID],
+                        CONF_ACCOUNT_ID: user_input[CONF_ACCOUNT_ID],
+                        CONF_US_ID: "",
                         "token_data": token_data,
+                        "premise_info": "",
+                    },
+                )
+            except MidApiError:
+                errors["base"] = "unknown"
+            except Exception:
+                _LOGGER.exception("Unexpected error during setup")
+                errors["base"] = "unknown"
+
+            if not errors:
+                us_id = account_info.us_id
+                await self.async_set_unique_id(us_id)
+                self._abort_if_unique_id_configured()
+
+                title = f"MID Power ({account_info.premise_info or us_id})"
+
+                return self.async_create_entry(
+                    title=title,
+                    data={
+                        CONF_USERNAME: user_input[CONF_USERNAME],
+                        CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_ACCOUNT_ID: user_input[CONF_ACCOUNT_ID],
+                        CONF_US_ID: us_id,
+                        "token_data": token_data,
+                        "premise_info": account_info.premise_info,
+                        "us_info": account_info.us_info,
+                        "us_type": account_info.us_type_description,
                     },
                 )
 

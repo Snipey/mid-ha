@@ -1,10 +1,12 @@
-# MID Power Usage
+# Modesto Irrigation District
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 
 Home Assistant custom integration for monitoring electric usage from Modesto Irrigation District (MID).
 
 ## Sensors
+
+### Monthly
 
 | Sensor | Description |
 |--------|-------------|
@@ -13,7 +15,14 @@ Home Assistant custom integration for monitoring electric usage from Modesto Irr
 | `sensor.mid_power_average_monthly_usage` | Average kWh per billing month |
 | `sensor.mid_power_peak_monthly_usage` | Highest single-month kWh in the period |
 
-The latest usage sensor also includes comparison attributes: `comparison_normal`, `comparison_min`, `comparison_max`, and `difference_vs_normal`.
+### Daily
+
+| Sensor | Description |
+|--------|-------------|
+| `sensor.mid_power_latest_daily_usage` | kWh used on the most recent day |
+| `sensor.mid_power_average_daily_usage` | Average daily kWh over the past ~35 days |
+
+The latest monthly sensor also includes comparison attributes: `comparison_normal`, `comparison_min`, `comparison_max`, and `difference_vs_normal`. The latest daily sensor includes `previous_day` and `day_change_pct`.
 
 ## Installation
 
@@ -45,19 +54,18 @@ After installation and restart:
 |-------|----------------|
 | **Username** | Log into [myaccount.mid.org](https://myaccount.mid.org), open DevTools (F12) → Network tab, look for a request to `/cognito/auth`, find `username` in the request payload |
 | **Password** | Your MID MyAccount password |
-| **US ID** | In the Network tab, look for requests to `getUsageDisplay`, find `usId` in the request payload (e.g. `781247994300`) |
+| **Account ID** | Your MID account number (found on your bill or in the MyAccount portal) |
 
-### Step-by-step: finding your credentials
+The integration will automatically discover your US ID and premise info after authenticating — you don't need to hunt through DevTools for the `usId`.
 
-![finding-usid](https://via.placeholder.com/800x400?text=DevTools+Network+Tab+-+getUsageDisplay+request)
+### Step-by-step: finding your username
 
 1. Log into [myaccount.mid.org](https://myaccount.mid.org)
 2. Press **F12** to open browser DevTools
 3. Go to the **Network** tab
-4. Find a request to **getUsageDisplay**
+4. Find the request to **cognito/auth**
 5. Click it, then go to the **Payload** tab
-6. Copy the `usId` value
-7. Find a request to **cognito/auth** to get your `username`
+6. Copy the `username` value (a random-looking string like `DX7RN2vLgqDq459nTsey0b2PT26e8rt3`)
 
 ## Dashboard Example
 
@@ -69,6 +77,8 @@ entities:
   - entity: sensor.mid_power_total_period_usage
   - entity: sensor.mid_power_average_monthly_usage
   - entity: sensor.mid_power_peak_monthly_usage
+  - entity: sensor.mid_power_latest_daily_usage
+  - entity: sensor.mid_power_average_daily_usage
 ```
 
 Or with mini-graph-card:
