@@ -352,20 +352,17 @@ class MidApiClient:
         if not end_date:
             end_date = datetime.now().strftime("%Y-%m-%d")
 
-        monthly_data = MidUsageData()
-        daily_data = MidUsageData()
-
         try:
             monthly_data = await self._fetch_monthly_usage(
                 start_date, end_date)
-        except MidApiError as exc:
-            _LOGGER.error("Monthly usage fetch failed: %s", exc)
+        except Exception as exc:
+            _LOGGER.error("Monthly usage failed: %s: %s", type(exc).__name__, exc)
             raise
 
         try:
             daily_data = await self._fetch_daily_usage()
-        except MidApiError as exc:
-            _LOGGER.error("Daily usage fetch failed: %s", exc)
+        except Exception as exc:
+            _LOGGER.error("Daily usage failed: %s: %s", type(exc).__name__, exc)
             raise
 
         return MidUsageData(
@@ -385,6 +382,8 @@ class MidApiClient:
             "overlayMode": OVERLAY_MODE,
             "measuringComponentId": "", "isTotalizationChannel": "",
         }})
+        _LOGGER.warning("Monthly raw response keys: %s",
+                        list(raw.keys()) if isinstance(raw, dict) else type(raw))
         return self._parse_usage_response(raw)
 
     async def _fetch_daily_usage(self) -> MidUsageData:
@@ -409,6 +408,8 @@ class MidApiClient:
                 raise_for_status=False,
             ) as resp:
                 body = await resp.text()
+                _LOGGER.warning("API %s HTTP %s: %s",
+                                url.split("/")[-1], resp.status, body[:200])
                 if resp.status == 401:
                     self._access_token = None
                     self._refresh_token = None
