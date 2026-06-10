@@ -169,7 +169,7 @@ class MidApiClient:
             self._internal_username = internal_user
 
     async def authenticate(self) -> dict:
-        _LOGGER.info("Authenticating with MID...")
+        _LOGGER.warning("Authenticating with MID as %s", self._email)
         payload: dict = {
             "username": self._email, "password": self._password}
         try:
@@ -186,6 +186,7 @@ class MidApiClient:
             raise MidApiError(f"Connection error during auth: {exc}") from exc
 
         if data.get("status") != "OK":
+            _LOGGER.error("Auth returned non-OK: %s", json_mod.dumps(data, default=str)[:500])
             raise MidAuthError("Auth response status not OK")
 
         inner = data.get("data", data)
@@ -220,7 +221,7 @@ class MidApiClient:
             ) as resp:
                 body = await resp.text()
                 if resp.status != 200:
-                    _LOGGER.warning("Token refresh failed: %s", body[:200])
+                    _LOGGER.error("Token refresh HTTP %s: %s", resp.status, body[:500])
                     self._refresh_token = None
                     self._access_token = None
                     return None
@@ -230,7 +231,7 @@ class MidApiClient:
             return None
 
         if data.get("status") != "OK":
-            _LOGGER.warning("Token refresh returned non-OK status")
+            _LOGGER.error("Token refresh returned: %s", json_mod.dumps(data, default=str)[:500])
             self._refresh_token = None
             self._access_token = None
             return None
@@ -256,7 +257,11 @@ class MidApiClient:
             if new_tokens:
                 return
         _LOGGER.warning("Refreshing token failed, re-authenticating...")
-        await self.authenticate()
+        try:
+            await self.authenticate()
+        except MidApiError as exc:
+            _LOGGER.error("Re-authentication failed: %s", exc)
+            raise
 
     async def discover_account(self) -> AccountInfo:
         await self._ensure_auth()

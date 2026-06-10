@@ -96,7 +96,8 @@ class MidUsageCoordinator(DataUpdateCoordinator[MidUsageData]):
         try:
             data = await self._client.fetch_all_usage()
         except MidApiError as exc:
-            raise UpdateFailed(f"Error fetching usage: {exc}") from exc
+            _LOGGER.error("MID data fetch failed: %s", exc)
+            raise UpdateFailed(str(exc)) from exc
 
         new_token_data = self._client._serialize_tokens()
         current_token_data = self._entry.data.get("token_data", {})
