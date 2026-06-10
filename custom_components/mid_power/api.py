@@ -167,6 +167,11 @@ class MidApiClient:
             self._device_key = device_key
         if internal_user:
             self._internal_username = internal_user
+        _LOGGER.warning("Loaded tokens: access=%s, refresh=%s, device=%s, user=%s",
+                        "yes" if access else "no",
+                        "yes" if refresh else "no",
+                        device_key[:30] if device_key else "MISSING",
+                        internal_user[:20] if internal_user else "MISSING")
 
     async def authenticate(self) -> dict:
         _LOGGER.warning("Authenticating with MID as %s", self._email)
@@ -200,7 +205,9 @@ class MidApiClient:
             raise MidAuthError("No access token in auth response")
 
         if access:
-            _LOGGER.warning("Auth succeeded, got access token (%d chars)", len(access))
+            _LOGGER.warning("Auth succeeded: access=%d chars, refresh=%d chars, device=%s, user=%s",
+                            len(access), len(refresh) if refresh else 0,
+                            self._device_key[:30], self._internal_username[:20])
         else:
             _LOGGER.error("Auth response had no accessToken!")
         self._access_token = access
@@ -219,6 +226,8 @@ class MidApiClient:
             "username": encoded_user,
             "deviceKey": self._device_key,
         }
+        _LOGGER.warning("Refresh payload: token[:20]=%s..., username=%s, deviceKey=%s",
+                        self._refresh_token[:20], encoded_user[:20], self._device_key)
         try:
             async with self._session.post(
                 REFRESH_URL, json=payload, raise_for_status=False
