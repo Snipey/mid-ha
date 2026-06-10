@@ -1,4 +1,4 @@
-"""The MID Power Usage integration."""
+"""The Modesto Irrigation District integration."""
 
 from __future__ import annotations
 
@@ -27,29 +27,28 @@ PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up MID Power Usage from a config entry."""
     session = async_get_clientsession(hass)
 
     client = MidApiClient(
         session,
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
-        entry.data[CONF_ACCOUNT_ID],
     )
 
     token_data = entry.data.get("token_data", {})
     client.load_tokens(token_data)
 
+    account_id = entry.data.get(CONF_ACCOUNT_ID, "")
     us_id = entry.data.get(CONF_US_ID, "")
-    if us_id:
-        client.set_us_id(us_id)
+    if account_id and us_id:
+        client.restore_ids(account_id, us_id)
 
     coordinator = MidUsageCoordinator(hass, client, entry)
 
     if us_id:
         await coordinator.async_config_entry_first_refresh()
     else:
-        _LOGGER.warning("No US ID available — usage data will not be fetched")
+        _LOGGER.warning("No US ID — skipping initial data fetch")
 
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {
@@ -66,7 +65,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload a config entry."""
     unload_ok = await hass.config_entries.async_unload_platforms(
         entry, PLATFORMS
     )
@@ -76,12 +74,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Handle options update."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
 class MidUsageCoordinator(DataUpdateCoordinator[MidUsageData]):
-    """Coordinator to fetch MID power usage data."""
 
     def __init__(self, hass: HomeAssistant, client: MidApiClient,
                  entry: ConfigEntry) -> None:
@@ -90,7 +86,7 @@ class MidUsageCoordinator(DataUpdateCoordinator[MidUsageData]):
         super().__init__(
             hass,
             _LOGGER,
-            name="MID Power Usage",
+            name="Modesto Irrigation District",
             update_interval=timedelta(minutes=POLL_INTERVAL_MINUTES),
         )
 

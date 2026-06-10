@@ -47,18 +47,17 @@ The latest monthly sensor also includes comparison attributes: `comparison_norma
 After installation and restart:
 
 1. Go to **Settings** → **Devices & Services** → **Add Integration**
-2. Search for "MID Power Usage"
-3. Fill in the form:
+2. Search for "Modesto Irrigation District"
+3. Enter your credentials:
 
 | Field | How to find it |
 |-------|----------------|
 | **Username** | Log into [myaccount.mid.org](https://myaccount.mid.org), open DevTools (F12) → Network tab, look for a request to `/cognito/auth`, find `username` in the request payload |
 | **Password** | Your MID MyAccount password |
-| **Account ID** | Your MID account number (found on your bill or in the MyAccount portal) |
 
-The integration will automatically discover your US ID and premise info after authenticating — you don't need to hunt through DevTools for the `usId`.
+The integration will automatically discover your account, usage service, and premise info — no need to hunt through DevTools for IDs.
 
-### Step-by-step: finding your username
+### Finding your username
 
 1. Log into [myaccount.mid.org](https://myaccount.mid.org)
 2. Press **F12** to open browser DevTools
@@ -96,9 +95,14 @@ line_width: 2
 ## Troubleshooting
 
 **"Authentication failed" during setup**
-- Verify your username, password, and US ID are correct
+- Verify your username and password are correct
 - The internal username is case-sensitive and may look like a random string (e.g. `DX7RN2vLgqDq459nTsey0b2PT26e8rt3`)
 - Make sure your MID account is active at [myaccount.mid.org](https://myaccount.mid.org)
+
+**"Account discovery failed" during setup**
+- The `/api/usernamesearch` response format may have changed
+- Check Home Assistant logs for the raw usernamesearch response
+- Open a GitHub issue with the log output (redact tokens)
 
 **No data after setup**
 - The integration polls every 60 minutes — wait for the first update or reload the integration

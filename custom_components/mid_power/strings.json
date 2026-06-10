@@ -4,16 +4,15 @@
       "user": {
         "data": {
           "username": "Username",
-          "password": "Password",
-          "account_id": "Account ID"
+          "password": "Password"
         },
-        "description": "Enter your MID MyAccount credentials. The US ID will be discovered automatically.",
+        "description": "Enter your MID MyAccount credentials. Your account will be discovered automatically.",
         "title": "Modesto Irrigation District"
       }
     },
     "error": {
       "auth": "Authentication failed. Check your username and password.",
-      "account": "Failed to find usage subscriptions for this account. Verify your Account ID.",
+      "account": "Account discovery failed. Check logs for details.",
       "unknown": "An unknown error occurred."
     },
     "abort": {

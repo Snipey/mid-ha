@@ -9,6 +9,7 @@ import logging
 import uuid
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
+from typing import Any
 
 from aiohttp import ClientSession, ClientError
 
@@ -17,6 +18,7 @@ from .const import (
     REFRESH_URL,
     USAGE_URL,
     ACCOUNT_INFO_URL,
+    USERNAME_SEARCH_URL,
     DISP_MODE,
     DISP_MODE_DAILY,
     UOM_KWH_D,
@@ -41,12 +43,8 @@ def _parse_body(body: str) -> dict:
         return {}
 
 
-# --- data types ---
-
-
 @dataclass
 class AccountInfo:
-    """Discovered account information from the MID API."""
     us_id: str = ""
     us_external_id: str = ""
     premise_info: str = ""
@@ -60,11 +58,11 @@ class AccountInfo:
     postal: str = ""
     bill_amount: str = "0.00"
     bill_due_date: str = ""
+    account_id: str = ""
 
 
 @dataclass
 class UsagePeriod:
-    """A single usage period record (monthly or daily)."""
     date: str
     uom: str
     tou: str
@@ -74,7 +72,6 @@ class UsagePeriod:
 
 @dataclass
 class OverlayPeriod:
-    """A single overlay/comparison period record."""
     date: str
     quantity: float
     min_quantity: float
@@ -83,44 +80,35 @@ class OverlayPeriod:
 
 @dataclass
 class MidUsageData:
-    """Parsed usage data from the MID API."""
     monthly_periods: list[UsagePeriod] = field(default_factory=list)
     daily_periods: list[UsagePeriod] = field(default_factory=list)
     overlay_periods: list[OverlayPeriod] = field(default_factory=list)
     channels: dict = field(default_factory=dict)
 
 
-# --- errors ---
-
-
 class MidApiError(Exception):
-    """Error from the MID API."""
+    pass
 
 
 class MidAuthError(MidApiError):
-    """Authentication error."""
+    pass
 
 
 class MidAccountError(MidApiError):
-    """Account lookup error."""
-
-
-# --- client ---
+    pass
 
 
 class MidApiClient:
-    """Async client for the MID API."""
 
-    def __init__(self, session: ClientSession, username: str, password: str,
-                 account_id: str):
+    def __init__(self, session: ClientSession, username: str,
+                 password: str):
         self._session = session
         self._username = username
         self._password = password
-        self._account_id = account_id
-        self._us_id: str | None = None
+        self._account_id: str = ""
+        self._us_id: str = ""
 
-        stored = (hashlib.sha256(username.encode()).hexdigest() +
-                  hashlib.sha256(account_id.encode()).hexdigest())
+        stored = hashlib.sha256(username.encode()).hexdigest()
         device_uuid = str(uuid.UUID(
             stored[0:8] + "-" + stored[8:12] + "-" +
             stored[12:16] + "-" + stored[16:20] + "-" +
@@ -134,13 +122,16 @@ class MidApiClient:
         self._token_expires: datetime | None = None
 
     @property
-    def us_id(self) -> str | None:
+    def us_id(self) -> str:
         return self._us_id
 
-    def set_us_id(self, us_id: str) -> None:
-        self._us_id = us_id
+    @property
+    def account_id(self) -> str:
+        return self._account_id
 
-    # --- token management ---
+    def restore_ids(self, account_id: str, us_id: str) -> None:
+        self._account_id = account_id
+        self._us_id = us_id
 
     def _serialize_tokens(self) -> dict:
         return {
@@ -169,25 +160,21 @@ class MidApiClient:
         self._token_expires = expires
 
     async def authenticate(self) -> dict:
-        """Authenticate and return token data for storage."""
         _LOGGER.debug("Authenticating with MID...")
-        payload = {
-            "username": self._username,
-            "password": self._password,
-        }
+        payload = {"username": self._username, "password": self._password}
         try:
             async with self._session.post(
                 AUTH_URL, json=payload, raise_for_status=False
             ) as resp:
                 body = await resp.text()
-                _LOGGER.debug("Auth status=%s body=%s", resp.status, body[:500])
+                _LOGGER.debug("Auth status=%s body=%s",
+                              resp.status, body[:500])
                 if resp.status != 200:
                     raise MidAuthError(
                         f"Auth failed: HTTP {resp.status} - {body[:300]}")
                 data = _parse_body(body)
         except ClientError as exc:
             raise MidApiError(f"Connection error during auth: {exc}") from exc
-
         return self._store_auth_tokens(data)
 
     def _store_auth_tokens(self, data: dict) -> dict:
@@ -205,7 +192,6 @@ class MidApiClient:
         else:
             access = refresh = id_tok = ""
             expires_in = 3600
-
         if access and not isinstance(access, str):
             access = str(access)
         self._access_token = access
@@ -220,21 +206,17 @@ class MidApiClient:
     async def _refresh_access_token(self) -> dict | None:
         if not self._access_token:
             return None
-
         encoded_user = _encode_username(self._username)
         payload = {
             "token": self._access_token,
             "username": encoded_user,
             "deviceKey": self._device_key,
         }
-        _LOGGER.debug("Refreshing token...")
         try:
             async with self._session.post(
                 REFRESH_URL, json=payload, raise_for_status=False
             ) as resp:
                 body = await resp.text()
-                _LOGGER.debug("Refresh status=%s body=%s",
-                              resp.status, body[:500])
                 if resp.status != 200:
                     _LOGGER.warning("Token refresh failed: %s", body[:200])
                     return None
@@ -242,7 +224,6 @@ class MidApiClient:
         except ClientError as exc:
             _LOGGER.warning("Connection error during token refresh: %s", exc)
             return None
-
         result = data.get("result", data)
         if isinstance(result, dict):
             token = (result.get("access_token") or result.get("AccessToken") or
@@ -252,7 +233,6 @@ class MidApiClient:
                           result.get("ExpiresIn") or 3600)
         else:
             return None
-
         if token and not isinstance(token, str):
             token = str(token)
         if token:
@@ -272,76 +252,88 @@ class MidApiClient:
         tokens = await self.authenticate()
         self.load_tokens(tokens)
 
-    # --- account discovery ---
-
     async def discover_account(self) -> AccountInfo:
-        """Discover account details and US ID from MID API."""
         await self._ensure_auth()
-
-        result = AccountInfo()
-
-        detail_data = await self._post_json(ACCOUNT_INFO_URL, {
-            "payload": {"accounts": [{"accountId": self._account_id}]}
+        search_data = await self._post_json(USERNAME_SEARCH_URL, {
+            "username": self._username,
         })
-        if isinstance(detail_data, dict):
-            addr = detail_data.get("addressInfo", {})
-            if isinstance(addr, dict):
-                result.customer_name = detail_data.get(
-                    "mainCustomerName", "")
-                result.address_line1 = addr.get("addressLine1", "")
-                result.city = addr.get("city", "")
-                result.state = addr.get("state", "")
-                result.postal = addr.get("postal", "")
-            bill = detail_data.get("billInfo", {})
-            if isinstance(bill, dict):
-                result.bill_amount = bill.get("totalAmount", "0.00")
-                result.bill_due_date = bill.get("dueDate", "")
+        _LOGGER.debug("Usernamesearch: %s",
+                       json_mod.dumps(search_data, default=str)[:1000])
+
+        account_id = ""
+        if isinstance(search_data, dict):
+            for candidate in ("accountId", "accountid", "acctId", "account_id",
+                              "AccountId", "acct_id"):
+                val = search_data.get(candidate)
+                if isinstance(val, str) and val.strip():
+                    account_id = val.strip()
+                    break
+            if not account_id:
+                items = _flatten_search(search_data)
+                for v in items:
+                    if isinstance(v, str) and v.strip() and v.isdigit():
+                        account_id = v
+                        break
+
+        if not account_id:
+            raise MidAccountError(
+                "Could not discover account ID. "
+                "Check HA logs for usernamesearch response.")
+
+        self._account_id = account_id
 
         sub_data = await self._post_json(USAGE_URL, {
-            "payload": {"accountId": self._account_id}
+            "payload": {"accountId": account_id}
         })
-        if isinstance(sub_data, dict):
-            sub = sub_data.get("usageSubscriptions", {})
-            if isinstance(sub, dict):
-                us_id = sub.get("usId", "")
-                if us_id:
-                    self._us_id = us_id
-                result.us_id = us_id
-                result.us_external_id = sub.get("usExternalId", "")
-                result.premise_info = sub.get("premiseInfo", "")
-                result.us_info = sub.get("usInfo", "")
-                result.us_type = sub.get("usType", "")
-                result.us_type_description = sub.get(
-                    "usTypeDescription", "")
+        sub = sub_data.get("usageSubscriptions", {})
+        if not isinstance(sub, dict):
+            raise MidAccountError("No usage subscriptions found")
+        us_id = sub.get("usId", "")
+        if not us_id:
+            raise MidAccountError("No US ID found")
+        self._us_id = us_id
 
-        if not result.us_id:
-            raise MidAccountError(
-                "No usage subscriptions found for this account")
+        detail_data = await self._post_json(ACCOUNT_INFO_URL, {
+            "payload": {"accounts": [{"accountId": account_id}]}
+        })
+        return self._build_account_info(detail_data, sub, account_id, us_id)
 
-        return result
+    def _build_account_info(self, detail: dict, sub: dict,
+                            account_id: str, us_id: str) -> AccountInfo:
+        info = AccountInfo(
+            account_id=account_id, us_id=us_id,
+            us_external_id=sub.get("usExternalId", ""),
+            premise_info=sub.get("premiseInfo", ""),
+            us_info=sub.get("usInfo", ""),
+            us_type=sub.get("usType", ""),
+            us_type_description=sub.get("usTypeDescription", ""),
+        )
+        if isinstance(detail, dict):
+            addr = detail.get("addressInfo", {})
+            if isinstance(addr, dict):
+                info.customer_name = detail.get("mainCustomerName", "")
+                info.address_line1 = addr.get("addressLine1", "")
+                info.city = addr.get("city", "")
+                info.state = addr.get("state", "")
+                info.postal = addr.get("postal", "")
+            bill = detail.get("billInfo", {})
+            if isinstance(bill, dict):
+                info.bill_amount = bill.get("totalAmount", "0.00")
+                info.bill_due_date = bill.get("dueDate", "")
+        return info
 
-    # --- usage data ---
-
-    async def fetch_all_usage(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-    ) -> MidUsageData:
-        """Fetch monthly, overlay, and daily usage data."""
+    async def fetch_all_usage(self, start_date: str | None = None,
+                              end_date: str | None = None) -> MidUsageData:
         await self._ensure_auth()
-
         if not self._us_id:
-            raise MidApiError("US ID not set — call discover_account first")
-
+            raise MidApiError("US ID not set")
         if not start_date:
             start_date = (datetime.now() - timedelta(days=365)).strftime(
                 "%Y-%m-%d")
         if not end_date:
             end_date = datetime.now().strftime("%Y-%m-%d")
-
         monthly = await self._fetch_monthly_usage(start_date, end_date)
         daily = await self._fetch_daily_usage()
-
         return MidUsageData(
             monthly_periods=monthly.usage_periods,
             daily_periods=daily.usage_periods,
@@ -351,67 +343,46 @@ class MidApiClient:
 
     async def _fetch_monthly_usage(self, start_date: str,
                                    end_date: str) -> MidUsageData:
-        payload_data = {
+        raw = await self._post_json(USAGE_URL, {"payload": {
             "usId": self._us_id,
-            "startDate": start_date,
-            "endDate": end_date,
-            "displayMode": DISP_MODE,
-            "uom": UOM_KWH_D,
-            "tou": "",
-            "sqi": SQI_CONSUMED,
-            "netMeteringGroup": "",
+            "startDate": start_date, "endDate": end_date,
+            "displayMode": DISP_MODE, "uom": UOM_KWH_D,
+            "tou": "", "sqi": SQI_CONSUMED, "netMeteringGroup": "",
             "overlayMode": OVERLAY_MODE,
-            "measuringComponentId": "",
-            "isTotalizationChannel": "",
-        }
-        raw = await self._post_json(USAGE_URL, {"payload": payload_data})
+            "measuringComponentId": "", "isTotalizationChannel": "",
+        }})
         return self._parse_usage_response(raw)
 
-    async def _fetch_daily_usage(self,
-                                 start_date: str | None = None,
-                                 end_date: str | None = None) -> MidUsageData:
-        if not start_date:
-            start_date = (datetime.now() - timedelta(days=35)).strftime(
-                "%Y-%m-%d")
-        if not end_date:
-            end_date = datetime.now().strftime("%Y-%m-%d")
-
-        payload_data = {
+    async def _fetch_daily_usage(self) -> MidUsageData:
+        start = (datetime.now() - timedelta(days=35)).strftime("%Y-%m-%d")
+        end = datetime.now().strftime("%Y-%m-%d")
+        raw = await self._post_json(USAGE_URL, {"payload": {
             "usId": self._us_id,
-            "startDate": start_date,
-            "endDate": end_date,
-            "displayMode": DISP_MODE_DAILY,
-            "uom": UOM_KWH_D,
-            "tou": "",
-            "sqi": SQI_CONSUMED,
-            "netMeteringGroup": "",
-            "measuringComponentId": "",
-            "isTotalizationChannel": "",
-        }
-        raw = await self._post_json(USAGE_URL, {"payload": payload_data})
+            "startDate": start, "endDate": end,
+            "displayMode": DISP_MODE_DAILY, "uom": UOM_KWH_D,
+            "tou": "", "sqi": SQI_CONSUMED, "netMeteringGroup": "",
+            "measuringComponentId": "", "isTotalizationChannel": "",
+        }})
         return self._parse_usage_response(raw)
-
-    # --- HTTP helpers ---
 
     async def _post_json(self, url: str, payload: dict) -> dict:
         headers = {}
         if self._access_token:
             headers["Authorization"] = f"Bearer {self._access_token}"
-
         try:
             async with self._session.post(
-                url, json=payload, headers=headers,
-                raise_for_status=False,
+                url, json=payload, headers=headers, raise_for_status=False,
             ) as resp:
                 body = await resp.text()
+                _LOGGER.debug("POST %s status=%s len=%s",
+                              url.split("/")[-1], resp.status, len(body))
                 if resp.status == 401:
                     self._access_token = None
                     self._token_expires = None
                     await self._ensure_auth()
                     return await self._post_json(url, payload)
                 if resp.status != 200:
-                    raise MidApiError(
-                        f"Request failed: HTTP {resp.status}")
+                    raise MidApiError(f"HTTP {resp.status}")
                 return _parse_body(body)
         except ClientError as exc:
             raise MidApiError(f"Connection error: {exc}") from exc
@@ -420,8 +391,6 @@ class MidApiClient:
     def _parse_usage_response(data: dict) -> MidUsageData:
         usage_periods: list[UsagePeriod] = []
         overlay_periods: list[OverlayPeriod] = []
-        channels: dict = {}
-
         usage_data = data.get("usagePeriods", {})
         if isinstance(usage_data, dict):
             for period in usage_data.get("periods", []):
@@ -437,7 +406,6 @@ class MidApiClient:
                     ))
                 except (ValueError, TypeError):
                     continue
-
         overlay_data = data.get("overlayQuantities", {})
         if isinstance(overlay_data, dict):
             for period in overlay_data.get("periods", []):
@@ -452,13 +420,28 @@ class MidApiClient:
                     ))
                 except (ValueError, TypeError):
                     continue
-
         channels = data.get("channels", {})
         if not isinstance(channels, dict):
             channels = {}
-
         return MidUsageData(
             monthly_periods=usage_periods,
             overlay_periods=overlay_periods,
             channels=channels,
         )
+
+
+def _flatten_search(data: dict) -> list[Any]:
+    """Flatten nested dict to find account ID values."""
+    result: list[Any] = []
+    for key, val in data.items():
+        if isinstance(val, str):
+            result.append(val)
+        elif isinstance(val, dict):
+            result.extend(_flatten_search(val))
+        elif isinstance(val, list):
+            for item in val:
+                if isinstance(item, dict):
+                    result.extend(_flatten_search(item))
+                elif isinstance(item, str):
+                    result.append(item)
+    return result

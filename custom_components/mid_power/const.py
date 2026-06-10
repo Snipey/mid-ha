@@ -4,14 +4,17 @@ DOMAIN = "mid_power"
 
 CONF_USERNAME = "username"
 CONF_PASSWORD = "password"
-CONF_ACCOUNT_ID = "account_id"
 CONF_US_ID = "us_id"
+CONF_ACCOUNT_ID = "account_id"
+CONF_PREMISE_INFO = "premise_info"
+CONF_US_TYPE = "us_type"
 
 API_BASE_URL = "https://ocx-be-prod.myaccount.mid.org"
 AUTH_URL = f"{API_BASE_URL}/cognito/auth"
 REFRESH_URL = f"{API_BASE_URL}/cognito/refreshToken"
 USAGE_URL = f"{API_BASE_URL}/ouaf/getUsageDisplay"
 ACCOUNT_INFO_URL = f"{API_BASE_URL}/ouaf/accountInfo"
+USERNAME_SEARCH_URL = f"{API_BASE_URL}/api/usernamesearch"
 
 POLL_INTERVAL_MINUTES = 60
 
