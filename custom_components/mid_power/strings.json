@@ -4,6 +4,7 @@
       "user": {
         "data": {
           "username": "Username",
+          "email": "Email",
           "password": "Password"
         },
         "description": "Enter your MID MyAccount credentials. Your account will be discovered automatically.",

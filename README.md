@@ -53,6 +53,7 @@ After installation and restart:
 | Field | How to find it |
 |-------|----------------|
 | **Username** | Log into [myaccount.mid.org](https://myaccount.mid.org), open DevTools (F12) → Network tab, look for a request to `/cognito/auth`, find `username` in the request payload |
+| **Email** | The email address you use to log into MyAccount |
 | **Password** | Your MID MyAccount password |
 
 The integration will automatically discover your account, usage service, and premise info — no need to hunt through DevTools for IDs.

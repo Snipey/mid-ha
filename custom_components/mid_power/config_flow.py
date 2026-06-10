@@ -14,6 +14,7 @@ from .const import (
     DOMAIN,
     CONF_USERNAME,
     CONF_PASSWORD,
+    CONF_EMAIL,
     CONF_ACCOUNT_ID,
     CONF_US_ID,
     CONF_PREMISE_INFO,
@@ -24,6 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 AUTH_DATA_SCHEMA = vol.Schema({
     vol.Required(CONF_USERNAME): str,
+    vol.Required(CONF_EMAIL): str,
     vol.Required(CONF_PASSWORD): str,
 })
 
@@ -42,6 +44,7 @@ class MidPowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 session,
                 user_input[CONF_USERNAME],
                 user_input[CONF_PASSWORD],
+                user_input[CONF_EMAIL],
             )
 
             try:
@@ -71,6 +74,7 @@ class MidPowerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_USERNAME: user_input[CONF_USERNAME],
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
+                        CONF_EMAIL: user_input[CONF_EMAIL],
                         CONF_ACCOUNT_ID: account_info.account_id,
                         CONF_US_ID: account_info.us_id,
                         CONF_PREMISE_INFO: account_info.premise_info,

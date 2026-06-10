@@ -16,6 +16,7 @@ from .const import (
     DOMAIN,
     CONF_USERNAME,
     CONF_PASSWORD,
+    CONF_EMAIL,
     CONF_ACCOUNT_ID,
     CONF_US_ID,
     POLL_INTERVAL_MINUTES,
@@ -33,6 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         session,
         entry.data[CONF_USERNAME],
         entry.data[CONF_PASSWORD],
+        entry.data.get(CONF_EMAIL, ""),
     )
 
     token_data = entry.data.get("token_data", {})

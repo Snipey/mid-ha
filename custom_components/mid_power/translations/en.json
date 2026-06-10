@@ -6,6 +6,7 @@
         "description": "Enter your MID MyAccount credentials.\n\nThe integration will automatically discover your account and usage service.",
         "data": {
           "username": "Username",
+          "email": "Email",
           "password": "Password"
         }
       }

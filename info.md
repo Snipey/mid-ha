@@ -39,6 +39,7 @@ Home Assistant integration for Modesto Irrigation District (MID) electric usage 
 2. Search for "Modesto Irrigation District"
 3. Enter your MID account credentials:
    - **Username**: Your MID internal username (found in network requests to `/cognito/auth` on the MID portal)
+   - **Email**: The email you use to log into MyAccount
    - **Password**: Your MID MyAccount password
 
 The integration automatically discovers your account, billing info, and usage service.

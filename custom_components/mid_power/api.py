@@ -101,10 +101,11 @@ class MidAccountError(MidApiError):
 class MidApiClient:
 
     def __init__(self, session: ClientSession, username: str,
-                 password: str):
+                 password: str, email: str = ""):
         self._session = session
         self._username = username
         self._password = password
+        self._email = email
         self._account_id: str = ""
         self._us_id: str = ""
 
@@ -161,7 +162,9 @@ class MidApiClient:
 
     async def authenticate(self) -> dict:
         _LOGGER.debug("Authenticating with MID...")
-        payload = {"username": self._username, "password": self._password}
+        payload = dict(username=self._username, password=self._password)
+        if self._email:
+            payload["email"] = self._email
         try:
             async with self._session.post(
                 AUTH_URL, json=payload, raise_for_status=False
