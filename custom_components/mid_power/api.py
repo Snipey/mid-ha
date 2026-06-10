@@ -195,12 +195,12 @@ class MidApiClient:
         return self._serialize_tokens()
 
     async def _refresh_access_token(self) -> dict | None:
-        if not self._access_token:
+        if not self._refresh_token:
             return None
 
         encoded_user = _encode_username(self._internal_username)
         payload = {
-            "token": self._access_token,
+            "token": self._refresh_token,
             "username": encoded_user,
             "deviceKey": self._device_key,
         }
@@ -211,6 +211,8 @@ class MidApiClient:
                 body = await resp.text()
                 if resp.status != 200:
                     _LOGGER.warning("Token refresh failed: %s", body[:200])
+                    self._refresh_token = None
+                    self._access_token = None
                     return None
                 data = _parse_body(body)
         except ClientError as exc:
@@ -218,24 +220,32 @@ class MidApiClient:
             return None
 
         if data.get("status") != "OK":
+            _LOGGER.warning("Token refresh returned non-OK status")
+            self._refresh_token = None
+            self._access_token = None
             return None
 
         inner = data.get("data", data)
-        token = inner.get("accessToken") or inner.get("token") or ""
-        if token:
-            self._access_token = token
+        access = inner.get("accessToken", "")
+        refresh = inner.get("refreshToken", "")
+        id_tok = inner.get("idToken", "")
+
+        if access:
+            self._access_token = access
+        if refresh:
+            self._refresh_token = refresh
+        if id_tok:
+            self._id_token = id_tok
+        if access:
             return self._serialize_tokens()
         return None
 
     async def _ensure_auth(self) -> None:
-        if not self._access_token:
-            await self.authenticate()
-            return
-        new_tokens = await self._refresh_access_token()
-        if new_tokens:
-            return
-        if not self._access_token:
-            await self.authenticate()
+        if self._refresh_token:
+            new_tokens = await self._refresh_access_token()
+            if new_tokens:
+                return
+        await self.authenticate()
 
     async def discover_account(self) -> AccountInfo:
         await self._ensure_auth()
