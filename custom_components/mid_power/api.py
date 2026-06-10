@@ -160,7 +160,7 @@ class MidApiClient:
         self._id_token = id_tok
 
     async def authenticate(self) -> dict:
-        _LOGGER.debug("Authenticating with MID...")
+        _LOGGER.info("Authenticating with MID...")
         payload: dict = {
             "username": self._email, "password": self._password}
         try:
@@ -198,6 +198,7 @@ class MidApiClient:
         if not self._refresh_token:
             return None
 
+        _LOGGER.info("Refreshing token via /cognito/refreshToken")
         encoded_user = _encode_username(self._internal_username)
         payload = {
             "token": self._refresh_token,
@@ -245,6 +246,7 @@ class MidApiClient:
             new_tokens = await self._refresh_access_token()
             if new_tokens:
                 return
+        _LOGGER.warning("Refreshing token failed, re-authenticating...")
         await self.authenticate()
 
     async def discover_account(self) -> AccountInfo:
